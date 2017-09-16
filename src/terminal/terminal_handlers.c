@@ -20,9 +20,11 @@
 #include "config.h"
 
 #include "terminal/char_mappings.h"
+#include "terminal/palette.h"
 #include "terminal/terminal.h"
 #include "terminal/terminal_handlers.h"
 #include "terminal/types.h"
+#include "terminal/xparsecolor.h"
 
 #include <guacamole/client.h>
 #include <guacamole/protocol.h>
@@ -366,7 +368,8 @@ int guac_terminal_escape(guac_terminal* term, unsigned char c) {
             break;
 
         default:
-            guac_client_log(term->client, GUAC_LOG_INFO, "Unhandled ESC sequence: %c", c);
+            guac_client_log(term->client, GUAC_LOG_DEBUG,
+                    "Unhandled ESC sequence: %c", c);
             term->char_handler = guac_terminal_echo; 
 
     }
@@ -431,6 +434,146 @@ static bool* __guac_terminal_get_flag(guac_terminal* term, int num, char private
 
     /* Unknown flag */
     return NULL;
+
+}
+
+/**
+ * Parses an xterm SGR sequence specifying the RGB values of a color.
+ *
+ * @param argc
+ *     The number of arguments within the argv array.
+ *
+ * @param argv
+ *     The SGR arguments to parse, with the first relevant argument the
+ *     red component of the RGB color.
+ *
+ * @param color
+ *     The guac_terminal_color structure which should receive the parsed
+ *     color values.
+ *
+ * @return
+ *     The number of arguments parsed, or zero if argv does not contain
+ *     enough elements to represent an RGB color.
+ */
+static int guac_terminal_parse_xterm256_rgb(int argc, const int* argv,
+        guac_terminal_color* color) {
+
+    /* RGB color palette entries require three arguments */
+    if (argc < 3)
+        return 0;
+
+    /* Read RGB components from arguments */
+    int red   = argv[0];
+    int green = argv[1];
+    int blue  = argv[2];
+
+    /* Ignore if components are out of range */
+    if (   red   < 0 || red   > 255
+        || green < 0 || green > 255
+        || blue  < 0 || blue  > 255)
+        return 3;
+
+    /* Store RGB components */
+    color->red   = (uint8_t) red;
+    color->green = (uint8_t) green;
+    color->blue  = (uint8_t) blue;
+
+    /* Color is not from the palette */
+    color->palette_index = -1;
+
+    /* Done */
+    return 3;
+
+}
+
+/**
+ * Parses an xterm SGR sequence specifying the index of a color within the
+ * 256-color palette.
+ *
+ * @param terminal
+ *     The terminal associated with the palette.
+ *
+ * @param argc
+ *     The number of arguments within the argv array.
+ *
+ * @param argv
+ *     The SGR arguments to parse, with the first relevant argument being
+ *     the index of the color.
+ *
+ * @param color
+ *     The guac_terminal_color structure which should receive the parsed
+ *     color values.
+ *
+ * @return
+ *     The number of arguments parsed, or zero if the palette index is
+ *     absent.
+ */
+static int guac_terminal_parse_xterm256_index(guac_terminal* terminal,
+        int argc, const int* argv, guac_terminal_color* color) {
+
+    /* 256-color palette entries require only one argument */
+    if (argc < 1)
+        return 0;
+
+    /* Copy palette entry */
+    guac_terminal_display_lookup_color(terminal->display, argv[0], color);
+
+    /* Done */
+    return 1;
+
+}
+
+/**
+ * Parses an xterm SGR sequence specifying the index of a color within the
+ * 256-color palette, or specfying the RGB values of a color. The number of
+ * arguments required by these sequences varies. If a 256-color sequence is
+ * recognized, the number of arguments parsed is returned.
+ *
+ * @param terminal
+ *     The terminal whose palette state should be used when parsing the xterm
+ *     256-color SGR sequence.
+ *
+ * @param argc
+ *     The number of arguments within the argv array.
+ *
+ * @param argv
+ *     The SGR arguments to parse, with the first relevant argument being
+ *     the first element of the array. In the case of an xterm 256-color
+ *     SGR sequence, the first element here will be either 2, for an
+ *     RGB color, or 5, for a 256-color palette index. All other values
+ *     are invalid and will not be parsed.
+ *
+ * @param color
+ *     The guac_terminal_color structure which should receive the parsed
+ *     color values.
+ *
+ * @return
+ *     The number of arguments parsed, or zero if argv does not point to
+ *     the first element of an xterm 256-color SGR sequence.
+ */
+static int guac_terminal_parse_xterm256(guac_terminal* terminal,
+        int argc, const int* argv, guac_terminal_color* color) {
+
+    /* All 256-color codes must have at least a type */
+    if (argc < 1)
+        return 0;
+
+    switch (argv[0]) {
+
+        /* RGB */
+        case 2:
+            return guac_terminal_parse_xterm256_rgb(
+                    argc - 1, &argv[1], color) + 1;
+
+        /* Palette index */
+        case 5:
+            return guac_terminal_parse_xterm256_index(terminal,
+                    argc - 1, &argv[1], color) + 1;
+
+    }
+
+    /* Invalid type */
+    return 0;
 
 }
 
@@ -757,6 +900,10 @@ int guac_terminal_csi(guac_terminal* term, unsigned char c) {
                     else if (value == 1)
                         term->current_attributes.bold = true;
 
+                    /* Faint (low intensity) */
+                    else if (value == 2)
+                        term->current_attributes.half_bright = true;
+
                     /* Underscore on */
                     else if (value == 4)
                         term->current_attributes.underscore = true;
@@ -766,8 +913,10 @@ int guac_terminal_csi(guac_terminal* term, unsigned char c) {
                         term->current_attributes.reverse = true;
 
                     /* Normal intensity (not bold) */
-                    else if (value == 21 || value == 22)
+                    else if (value == 21 || value == 22) {
                         term->current_attributes.bold = false;
+                        term->current_attributes.half_bright = false;
+                    }
 
                     /* Reset underscore */
                     else if (value == 24)
@@ -779,13 +928,32 @@ int guac_terminal_csi(guac_terminal* term, unsigned char c) {
 
                     /* Foreground */
                     else if (value >= 30 && value <= 37)
-                        term->current_attributes.foreground = value - 30;
+                        guac_terminal_display_lookup_color(term->display,
+                                value - 30,
+                                &term->current_attributes.foreground);
 
-                    /* Underscore on, default foreground */
+                    /* Underscore on, default foreground OR 256-color
+                     * foreground */
                     else if (value == 38) {
-                        term->current_attributes.underscore = true;
-                        term->current_attributes.foreground =
-                            term->default_char.attributes.foreground;
+
+                        /* Attempt to set foreground with 256-color entry */
+                        int xterm256_length =
+                            guac_terminal_parse_xterm256(term,
+                                    argc - i - 1, &argv[i + 1],
+                                    &term->current_attributes.foreground);
+
+                        /* If valid 256-color entry, foreground has been set */
+                        if (xterm256_length > 0)
+                            i += xterm256_length;
+
+                        /* Otherwise interpret as underscore and default
+                         * foreground  */
+                        else {
+                            term->current_attributes.underscore = true;
+                            term->current_attributes.foreground =
+                                term->default_char.attributes.foreground;
+                        }
+
                     }
 
                     /* Underscore off, default foreground */
@@ -797,12 +965,32 @@ int guac_terminal_csi(guac_terminal* term, unsigned char c) {
 
                     /* Background */
                     else if (value >= 40 && value <= 47)
-                        term->current_attributes.background = value - 40;
+                        guac_terminal_display_lookup_color(term->display,
+                                value - 40,
+                                &term->current_attributes.background);
+
+                    /* 256-color background */
+                    else if (value == 48)
+                        i += guac_terminal_parse_xterm256(term,
+                                argc - i - 1, &argv[i + 1],
+                                &term->current_attributes.background);
 
                     /* Reset background */
                     else if (value == 49)
                         term->current_attributes.background =
                             term->default_char.attributes.background;
+
+                    /* Intense foreground */
+                    else if (value >= 90 && value <= 97)
+                        guac_terminal_display_lookup_color(term->display,
+                                value - 90 + GUAC_TERMINAL_FIRST_INTENSE,
+                                &term->current_attributes.foreground);
+
+                    /* Intense background */
+                    else if (value >= 100 && value <= 107)
+                        guac_terminal_display_lookup_color(term->display,
+                                value - 100 + GUAC_TERMINAL_FIRST_INTENSE,
+                                &term->current_attributes.background);
 
                 }
 
@@ -860,11 +1048,11 @@ int guac_terminal_csi(guac_terminal* term, unsigned char c) {
             default:
                 if (c != ';') {
 
-                    guac_client_log(term->client, GUAC_LOG_INFO,
+                    guac_client_log(term->client, GUAC_LOG_DEBUG,
                             "Unhandled CSI sequence: %c", c);
 
                     for (i=0; i<argc; i++)
-                        guac_client_log(term->client, GUAC_LOG_INFO,
+                        guac_client_log(term->client, GUAC_LOG_DEBUG,
                                 " -> argv[%i] = %i", i, argv[i]);
 
                 }
@@ -993,6 +1181,117 @@ int guac_terminal_close_pipe_stream(guac_terminal* term, unsigned char c) {
 
 }
 
+int guac_terminal_window_title(guac_terminal* term, unsigned char c) {
+
+    static int position = 0;
+    static char title[4096];
+
+    guac_socket* socket = term->client->socket;
+
+    /* Stop on ECMA-48 ST (String Terminator */
+    if (c == 0x9C || c == 0x5C || c == 0x07) {
+
+        /* Terminate and reset stored title */
+        title[position] = '\0';
+        position = 0;
+
+        /* Send title as connection name */
+        guac_protocol_send_name(socket, title);
+        guac_socket_flush(socket);
+
+        term->char_handler = guac_terminal_echo;
+
+    }
+
+    /* Store all other characters within title, space permitting */
+    else if (position < sizeof(title) - 1)
+        title[position++] = (char) c;
+
+    return 0;
+
+}
+
+int guac_terminal_xterm_palette(guac_terminal* term, unsigned char c) {
+
+    /**
+     * Whether we are currently reading the color spec. If false, we are
+     * currently reading the color index.
+     */
+    static bool read_color_spec = false;
+
+    /**
+     * The index of the palette entry being modified.
+     */
+    static int index = 0;
+
+    /**
+     * The color spec string, valid only if read_color_spec is true.
+     */
+    static char color_spec[256];
+
+    /**
+     * The current position within the color spec string, valid only if
+     * read_color_spec is true.
+     */
+    static int color_spec_pos = 0;
+
+    /* If not reading the color spec, parse the index */
+    if (!read_color_spec) {
+
+        /* If digit, append to index */
+        if (c >= '0' && c <= '9')
+            index = index * 10 + c - '0';
+
+        /* If end of parameter, switch to reading the color */
+        else if (c == ';') {
+            read_color_spec = true;
+            color_spec_pos = 0;
+        }
+
+    }
+
+    /* Once the index has been parsed, read the color spec */
+    else {
+
+        /* Modify palette once index/spec pair has been read */
+        if (c == ';' || c == 0x9C || c == 0x5C || c == 0x07) {
+
+            guac_terminal_color color;
+
+            /* Terminate color spec string */
+            color_spec[color_spec_pos] = '\0';
+
+            /* Modify palette if color spec is valid */
+            if (!guac_terminal_xparsecolor(color_spec, &color))
+                guac_terminal_display_assign_color(term->display,
+                        index, &color);
+            else
+                guac_client_log(term->client, GUAC_LOG_DEBUG,
+                        "Invalid XParseColor() color spec: \"%s\"",
+                        color_spec);
+
+            /* Resume parsing index */
+            read_color_spec = false;
+            index = 0;
+
+        }
+
+        /* Append characters to color spec as long as available space is not
+         * exceeded */
+        else if (color_spec_pos < 255) {
+            color_spec[color_spec_pos++] = c;
+        }
+
+    }
+
+    /* Stop on ECMA-48 ST (String Terminator */
+    if (c == 0x9C || c == 0x5C || c == 0x07)
+        term->char_handler = guac_terminal_echo;
+
+    return 0;
+
+}
+
 int guac_terminal_osc(guac_terminal* term, unsigned char c) {
 
     static int operation = 0;
@@ -1020,6 +1319,14 @@ int guac_terminal_osc(guac_terminal* term, unsigned char c) {
         else if (operation == 482203)
             term->char_handler = guac_terminal_close_pipe_stream;
 
+        /* Set window title OSC */
+        else if (operation == 0 || operation == 2)
+            term->char_handler = guac_terminal_window_title;
+
+        /* xterm 256-color palette redefinition */
+        else if (operation == 4)
+            term->char_handler = guac_terminal_xterm_palette;
+
         /* Reset parameter for next OSC */
         operation = 0;
 
@@ -1031,7 +1338,8 @@ int guac_terminal_osc(guac_terminal* term, unsigned char c) {
 
     /* Stop on unrecognized character */
     else {
-        guac_client_log(term->client, GUAC_LOG_INFO, "Unexpected character in OSC: 0x%X", c);
+        guac_client_log(term->client, GUAC_LOG_DEBUG,
+                "Unexpected character in OSC: 0x%X", c);
         term->char_handler = guac_terminal_echo;
     }
 

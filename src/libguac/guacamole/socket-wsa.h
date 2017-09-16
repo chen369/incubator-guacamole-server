@@ -17,38 +17,35 @@
  * under the License.
  */
 
-
-#ifndef _GUAC_TERMINAL_COMMON_H
-#define _GUAC_TERMINAL_COMMON_H
-
-#include "config.h"
-#include "types.h"
-
-#include <stdbool.h>
+#ifndef GUAC_SOCKET_WSA_H
+#define GUAC_SOCKET_WSA_H
 
 /**
- * Returns the closest value to the value given that is also
- * within the given range.
+ * Provides an implementation of guac_socket specific to the Windows Socket API
+ * (aka WSA or "winsock"). This header will only be available if libguac was
+ * built with WSA support.
+ *
+ * @file socket-wsa.h
  */
-int guac_terminal_fit_to_range(int value, int min, int max);
+
+#include "socket-types.h"
+
+#include <winsock2.h>
 
 /**
- * Encodes the given codepoint as UTF-8, storing the result within the
- * provided buffer, and returning the number of bytes stored.
+ * Creates a new guac_socket which will use the Windows Socket API (aka WSA or
+ * "winsock") for all communication. Freeing this guac_socket will
+ * automatically close the associated SOCKET handle.
+ *
+ * @param sock
+ *     The WSA SOCKET handle to use for the connection underlying the created
+ *     guac_socket.
+ *
+ * @return
+ *     A newly-allocated guac_socket which will transparently use the Windows
+ *     Socket API for all communication.
  */
-int guac_terminal_encode_utf8(int codepoint, char* utf8);
-
-/**
- * Returns whether a codepoint has a corresponding glyph, or is rendered
- * as a blank space.
- */
-bool guac_terminal_has_glyph(int codepoint);
-
-/**
- * Similar to write, but automatically retries the write operation until
- * an error occurs.
- */
-int guac_terminal_write_all(int fd, const char* buffer, int size);
+guac_socket* guac_socket_open_wsa(SOCKET sock);
 
 #endif
 

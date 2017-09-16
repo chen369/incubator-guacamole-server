@@ -68,7 +68,8 @@ noinst_HEADERS =      \
     encode-png.h      \
     palette.h         \
     user-handlers.h   \
-    raw_encoder.h
+    raw_encoder.h     \
+    wait-fd.h
 
 libguac_la_SOURCES =   \
     audio.c            \
@@ -91,7 +92,9 @@ libguac_la_SOURCES =   \
     timestamp.c        \
     unicode.c          \
     user.c             \
-    user-handlers.c
+    user-handlers.c    \
+    user-handshake.c   \
+    wait-fd.c
 
 # Compile WebP support if available
 if ENABLE_WEBP
@@ -99,19 +102,32 @@ libguac_la_SOURCES += encode-webp.c
 noinst_HEADERS += encode-webp.h
 endif
 
+# SSL support
+if ENABLE_SSL
+libguac_la_SOURCES += socket-ssl.c
+libguacinc_HEADERS += guacamole/socket-ssl.h
+endif
+
+# Winsock support
+if ENABLE_WINSOCK
+libguac_la_SOURCES += socket-wsa.c
+libguacinc_HEADERS += guacamole/socket-wsa.h
+endif
 
 libguac_la_CFLAGS = \
     -Werror -Wall -pedantic -Iguacamole
 
 libguac_la_LDFLAGS =     \
-    -version-info 13:0:1 \
+    -version-info 14:0:2 \
+    -no-undefined        \
     @CAIRO_LIBS@         \
+    @DL_LIBS@            \
     @JPEG_LIBS@          \
     @PNG_LIBS@           \
     @PTHREAD_LIBS@       \
+    @SSL_LIBS@           \
     @UUID_LIBS@          \
     @VORBIS_LIBS@        \
-    @WEBP_LIBS@
+    @WEBP_LIBS@          \
+    @WINSOCK_LIBS@
 
-libguac_la_LIBADD = \
-    @LIBADD_DLOPEN@ 

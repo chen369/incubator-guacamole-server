@@ -84,6 +84,8 @@ const char* GUAC_RDP_CLIENT_ARGS[] = {
     "sftp-private-key",
     "sftp-passphrase",
     "sftp-directory",
+    "sftp-root-directory",
+    "sftp-server-alive-interval",
 #endif
 
     "recording-path",
@@ -92,6 +94,18 @@ const char* GUAC_RDP_CLIENT_ARGS[] = {
     "resize-method",
     "enable-audio-input",
     "read-only",
+
+#ifdef HAVE_FREERDP_GATEWAY_SUPPORT
+    "gateway-hostname",
+    "gateway-port",
+    "gateway-domain",
+    "gateway-username",
+    "gateway-password",
+#endif
+
+#ifdef HAVE_FREERDP_LOAD_BALANCER_SUPPORT
+    "load-balance-info",
+#endif
 
     NULL
 };
@@ -354,6 +368,19 @@ enum RDP_ARGS_IDX {
      */
     IDX_SFTP_DIRECTORY,
 
+    /**
+     * The path of the directory within the SSH server to expose as a
+     * filesystem guac_object. If omitted, "/" will be used by default.
+     */
+    IDX_SFTP_ROOT_DIRECTORY,
+
+    /**
+     * The interval at which SSH keepalive messages are sent to the server for
+     * SFTP connections.  The default is 0 (disabling keepalives), and a value
+     * of 1 is automatically increased to 2 by libssh2 to avoid busy loop corner
+     * cases.
+     */
+    IDX_SFTP_SERVER_ALIVE_INTERVAL,
 #endif
 
     /**
@@ -391,6 +418,53 @@ enum RDP_ARGS_IDX {
      * dropped), "false" or blank otherwise.
      */
     IDX_READ_ONLY,
+
+#ifdef HAVE_FREERDP_GATEWAY_SUPPORT
+    /**
+     * The hostname of the remote desktop gateway that should be used as an
+     * intermediary for the remote desktop connection. If omitted, a gateway
+     * will not be used.
+     */
+    IDX_GATEWAY_HOSTNAME,
+
+    /**
+     * The port of the remote desktop gateway that should be used as an
+     * intermediary for the remote desktop connection. By default, this will be
+     * 443.
+     *
+     * NOTE: If using a version of FreeRDP prior to 1.2, this setting has no
+     * effect. FreeRDP instead uses a hard-coded value of 443.
+     */
+    IDX_GATEWAY_PORT,
+
+    /**
+     * The domain of the user authenticating with the remote desktop gateway,
+     * if a gateway is being used. This is not necessarily the same as the
+     * user actually using the remote desktop connection.
+     */
+    IDX_GATEWAY_DOMAIN,
+
+    /**
+     * The username of the user authenticating with the remote desktop gateway,
+     * if a gateway is being used. This is not necessarily the same as the
+     * user actually using the remote desktop connection.
+     */
+    IDX_GATEWAY_USERNAME,
+
+    /**
+     * The password to provide when authenticating with the remote desktop
+     * gateway, if a gateway is being used.
+     */
+    IDX_GATEWAY_PASSWORD,
+#endif
+
+#ifdef HAVE_FREERDP_LOAD_BALANCER_SUPPORT
+    /**
+     * The load balancing information/cookie which should be provided to
+     * the connection broker, if a connection broker is being used.
+     */
+    IDX_LOAD_BALANCE_INFO,
+#endif
 
     RDP_ARGS_COUNT
 };
@@ -716,6 +790,16 @@ guac_rdp_settings* guac_rdp_parse_args(guac_user* user,
     settings->sftp_directory =
         guac_user_parse_args_string(user, GUAC_RDP_CLIENT_ARGS, argv,
                 IDX_SFTP_DIRECTORY, NULL);
+
+    /* SFTP root directory */
+    settings->sftp_root_directory =
+        guac_user_parse_args_string(user, GUAC_RDP_CLIENT_ARGS, argv,
+                IDX_SFTP_ROOT_DIRECTORY, "/");
+
+    /* Default keepalive value */
+    settings->sftp_server_alive_interval =
+        guac_user_parse_args_int(user, GUAC_RDP_CLIENT_ARGS, argv,
+                IDX_SFTP_SERVER_ALIVE_INTERVAL, 0);
 #endif
 
     /* Read recording path */
@@ -763,6 +847,40 @@ guac_rdp_settings* guac_rdp_parse_args(guac_user* user,
         guac_user_parse_args_boolean(user, GUAC_RDP_CLIENT_ARGS, argv,
                 IDX_ENABLE_AUDIO_INPUT, 0);
 
+#ifdef HAVE_FREERDP_GATEWAY_SUPPORT
+    /* Set gateway hostname */
+    settings->gateway_hostname =
+        guac_user_parse_args_string(user, GUAC_RDP_CLIENT_ARGS, argv,
+                IDX_GATEWAY_HOSTNAME, NULL);
+
+    /* If gateway port specified, use it */
+    settings->gateway_port =
+        guac_user_parse_args_int(user, GUAC_RDP_CLIENT_ARGS, argv,
+                IDX_GATEWAY_PORT, 443);
+
+    /* Set gateway domain */
+    settings->gateway_domain =
+        guac_user_parse_args_string(user, GUAC_RDP_CLIENT_ARGS, argv,
+                IDX_GATEWAY_DOMAIN, NULL);
+
+    /* Set gateway username */
+    settings->gateway_username =
+        guac_user_parse_args_string(user, GUAC_RDP_CLIENT_ARGS, argv,
+                IDX_GATEWAY_USERNAME, NULL);
+
+    /* Set gateway password */
+    settings->gateway_password =
+        guac_user_parse_args_string(user, GUAC_RDP_CLIENT_ARGS, argv,
+                IDX_GATEWAY_PASSWORD, NULL);
+#endif
+
+#ifdef HAVE_FREERDP_LOAD_BALANCER_SUPPORT
+    /* Set load balance info */
+    settings->load_balance_info =
+        guac_user_parse_args_string(user, GUAC_RDP_CLIENT_ARGS, argv,
+                IDX_LOAD_BALANCE_INFO, NULL);
+#endif
+
     /* Success */
     return settings;
 
@@ -803,12 +921,26 @@ void guac_rdp_settings_free(guac_rdp_settings* settings) {
 #ifdef ENABLE_COMMON_SSH
     /* Free SFTP settings */
     free(settings->sftp_directory);
+    free(settings->sftp_root_directory);
     free(settings->sftp_hostname);
     free(settings->sftp_passphrase);
     free(settings->sftp_password);
     free(settings->sftp_port);
     free(settings->sftp_private_key);
     free(settings->sftp_username);
+#endif
+
+#ifdef HAVE_FREERDP_GATEWAY_SUPPORT
+    /* Free RD gateway information */
+    free(settings->gateway_hostname);
+    free(settings->gateway_domain);
+    free(settings->gateway_username);
+    free(settings->gateway_password);
+#endif
+
+#ifdef HAVE_FREERDP_LOAD_BALANCER_SUPPORT
+    /* Free load balancer information string */
+    free(settings->load_balance_info);
 #endif
 
     /* Free settings structure */
@@ -1140,6 +1272,34 @@ void guac_rdp_push_settings(guac_rdp_settings* guac_settings, freerdp* rdp) {
         rdp_settings->NegotiateSecurityLayer = FALSE;
         rdp_settings->SendPreconnectionPdu = TRUE;
         rdp_settings->PreconnectionBlob = guac_settings->preconnection_blob;
+    }
+#endif
+
+#ifdef HAVE_FREERDP_GATEWAY_SUPPORT
+    /* Enable use of RD gateway if a gateway hostname is provided */
+    if (guac_settings->gateway_hostname != NULL) {
+
+        /* Enable RD gateway */
+        rdp_settings->GatewayEnabled = TRUE;
+
+        /* RD gateway connection details */
+        rdp_settings->GatewayHostname = guac_rdp_strdup(guac_settings->gateway_hostname);
+        rdp_settings->GatewayPort = guac_settings->gateway_port;
+
+        /* RD gateway credentials */
+        rdp_settings->GatewayUseSameCredentials = FALSE;
+        rdp_settings->GatewayDomain = guac_rdp_strdup(guac_settings->gateway_domain);
+        rdp_settings->GatewayUsername = guac_rdp_strdup(guac_settings->gateway_username);
+        rdp_settings->GatewayPassword = guac_rdp_strdup(guac_settings->gateway_password);
+
+    }
+#endif
+
+#ifdef HAVE_FREERDP_LOAD_BALANCER_SUPPORT
+    /* Store load balance info (and calculate length) if provided */
+    if (guac_settings->load_balance_info != NULL) {
+        rdp_settings->LoadBalanceInfo = (BYTE*) guac_rdp_strdup(guac_settings->load_balance_info);
+        rdp_settings->LoadBalanceInfoLength = strlen(guac_settings->load_balance_info);
     }
 #endif
 

@@ -17,38 +17,25 @@
  * under the License.
  */
 
-
-#ifndef _GUAC_TERMINAL_COMMON_H
-#define _GUAC_TERMINAL_COMMON_H
-
-#include "config.h"
-#include "types.h"
-
-#include <stdbool.h>
+#ifndef GUAC_WAIT_FD_H
+#define GUAC_WAIT_FD_H
 
 /**
- * Returns the closest value to the value given that is also
- * within the given range.
+ * Waits for data to be available for reading on a given file descriptor,
+ * similar to the POSIX select() and poll() functions.
+ *
+ * @param fd
+ *     The file descriptor to wait for.
+ *
+ * @param usec_timeout
+ *     The maximum number of microseconds to wait for data, or -1 to
+ *     potentially wait forever.
+ *
+ * @return
+ *     Positive if data is available for reading, zero if the timeout elapsed
+ *     and no data is available, negative if an error occurs, in which case
+ *     errno will also be set.
  */
-int guac_terminal_fit_to_range(int value, int min, int max);
-
-/**
- * Encodes the given codepoint as UTF-8, storing the result within the
- * provided buffer, and returning the number of bytes stored.
- */
-int guac_terminal_encode_utf8(int codepoint, char* utf8);
-
-/**
- * Returns whether a codepoint has a corresponding glyph, or is rendered
- * as a blank space.
- */
-bool guac_terminal_has_glyph(int codepoint);
-
-/**
- * Similar to write, but automatically retries the write operation until
- * an error occurs.
- */
-int guac_terminal_write_all(int fd, const char* buffer, int size);
+int guac_wait_for_fd(int fd, int usec_timeout);
 
 #endif
-

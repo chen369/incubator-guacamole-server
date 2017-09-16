@@ -359,6 +359,20 @@ typedef struct guac_rdp_settings {
      * the destination directory is otherwise ambiguous).
      */
     char* sftp_directory;
+
+    /**
+     * The path of the directory within the SSH server to expose as a
+     * filesystem guac_object.
+     */
+    char* sftp_root_directory;
+
+    /**
+     * The interval at which SSH keepalive messages are sent to the server for
+     * SFTP connections.  The default is 0 (disabling keepalives), and a value
+     * of 1 is automatically increased to 2 by libssh2 to avoid busy loop corner
+     * cases.
+     */
+    int sftp_server_alive_interval;
 #endif
 
     /**
@@ -387,6 +401,51 @@ typedef struct guac_rdp_settings {
      * Whether audio input (microphone) is enabled.
      */
     int enable_audio_input;
+
+#ifdef HAVE_FREERDP_GATEWAY_SUPPORT
+    /**
+     * The hostname of the remote desktop gateway that should be used as an
+     * intermediary for the remote desktop connection. If no gateway should
+     * be used, this will be NULL.
+     */
+    char* gateway_hostname;
+
+    /**
+     * The port of the remote desktop gateway that should be used as an
+     * intermediary for the remote desktop connection. NOTE: versions of
+     * FreeRDP prior to 1.2 which have gateway support ignore this value, and
+     * instead use a hard-coded value of 443.
+     */
+    int gateway_port;
+
+    /**
+     * The domain of the user authenticating with the remote desktop gateway,
+     * if a gateway is being used. This is not necessarily the same as the
+     * user actually using the remote desktop connection.
+     */
+    char* gateway_domain;
+
+    /**
+     * The username of the user authenticating with the remote desktop gateway,
+     * if a gateway is being used. This is not necessarily the same as the
+     * user actually using the remote desktop connection.
+     */
+    char* gateway_username;
+
+    /**
+     * The password to provide when authenticating with the remote desktop
+     * gateway, if a gateway is being used.
+     */
+    char* gateway_password;
+#endif
+
+#ifdef HAVE_FREERDP_LOAD_BALANCER_SUPPORT
+    /**
+     * The load balancing information/cookie which should be provided to
+     * the connection broker, if a connection broker is being used.
+     */
+    char* load_balance_info;
+#endif
 
 } guac_rdp_settings;
 

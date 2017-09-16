@@ -24,6 +24,7 @@
 #include "config.h"
 
 #include "common/surface.h"
+#include "palette.h"
 #include "types.h"
 
 #include <guacamole/client.h>
@@ -31,98 +32,12 @@
 #include <pango/pangocairo.h>
 
 #include <stdbool.h>
+#include <stdint.h>
 
 /**
  * The maximum width of any character, in columns.
  */
 #define GUAC_TERMINAL_MAX_CHAR_WIDTH 2
-
-/**
- * The index of black within the terminal color palette.
- */
-#define GUAC_TERMINAL_COLOR_BLACK 0
-
-/**
- * The index of low-intensity red within the terminal color palette.
- */
-#define GUAC_TERMINAL_COLOR_DARK_RED 1
-
-/**
- * The index of low-intensity green within the terminal color palette.
- */
-#define GUAC_TERMINAL_COLOR_DARK_GREEN 2
-
-/**
- * The index of brown within the terminal color palette.
- */
-#define GUAC_TERMINAL_COLOR_BROWN 3
-
-/**
- * The index of low-intensity blue within the terminal color palette.
- */
-#define GUAC_TERMINAL_COLOR_DARK_BLUE 4
-
-/**
- * The index of low-intensity magenta (purple) within the terminal color
- * palette.
- */
-#define GUAC_TERMINAL_COLOR_PURPLE 5
-
-/**
- * The index of low-intensity cyan (teal) within the terminal color palette.
- */
-#define GUAC_TERMINAL_COLOR_TEAL 6
-
-/**
- * The index of low-intensity white (gray) within the terminal color palette.
- */
-#define GUAC_TERMINAL_COLOR_GRAY 7
-
-/**
- * The index of bright black (dark gray) within the terminal color palette.
- */
-#define GUAC_TERMINAL_COLOR_DARK_GRAY 8
-
-/**
- * The index of bright red within the terminal color palette.
- */
-#define GUAC_TERMINAL_COLOR_RED 9
-
-/**
- * The index of bright green within the terminal color palette.
- */
-#define GUAC_TERMINAL_COLOR_GREEN 10
-
-/**
- * The index of bright brown (yellow) within the terminal color palette.
- */
-#define GUAC_TERMINAL_COLOR_YELLOW 11
-
-/**
- * The index of bright blue within the terminal color palette.
- */
-#define GUAC_TERMINAL_COLOR_BLUE 12
-
-/**
- * The index of bright magenta within the terminal color palette.
- */
-#define GUAC_TERMINAL_COLOR_MAGENTA 13
-
-/**
- * The index of bright cyan within the terminal color palette.
- */
-#define GUAC_TERMINAL_COLOR_CYAN 14
-
-/**
- * The index of bright white within the terminal color palette.
- */
-#define GUAC_TERMINAL_COLOR_WHITE 15
-
-/**
- * The available color palette. All integer colors within structures
- * here are indices into this palette.
- */
-extern const guac_terminal_color guac_terminal_palette[16];
 
 /**
  * All available terminal operations which affect character cells.
@@ -178,7 +93,8 @@ typedef struct guac_terminal_operation {
 } guac_terminal_operation;
 
 /**
- * Set of all pending operations for the currently-visible screen area.
+ * Set of all pending operations for the currently-visible screen area, and the
+ * contextual information necessary to interpret and render those changes.
  */
 typedef struct guac_terminal_display {
 
@@ -218,24 +134,31 @@ typedef struct guac_terminal_display {
     int char_height;
 
     /**
+     * The current palette.
+     */
+    guac_terminal_color palette[256];
+
+    /**
      * Default foreground color for all glyphs.
      */
-    int default_foreground;
+    guac_terminal_color default_foreground;
 
     /**
      * Default background color for all glyphs and the terminal itself.
      */
-    int default_background;
+    guac_terminal_color default_background;
 
     /**
-     * Color of glyphs in copy buffer
+     * The foreground color to be used for the next glyph rendered to the
+     * terminal.
      */
-    int glyph_foreground;
+    guac_terminal_color glyph_foreground;
 
     /**
-     * Color of glyphs in copy buffer
+     * The background color to be used for the next glyph rendered to the
+     * terminal.
      */
-    int glyph_background;
+    guac_terminal_color glyph_background;
 
     /**
      * The surface containing the actual terminal.
@@ -292,12 +215,61 @@ typedef struct guac_terminal_display {
  */
 guac_terminal_display* guac_terminal_display_alloc(guac_client* client,
         const char* font_name, int font_size, int dpi,
-        int foreground, int background);
+        guac_terminal_color* foreground, guac_terminal_color* background);
 
 /**
  * Frees the given display.
  */
 void guac_terminal_display_free(guac_terminal_display* display);
+
+/**
+ * Resets the palette of the given display to the initial, default color
+ * values, as defined by GUAC_TERMINAL_INITIAL_PALETTE.
+ *
+ * @param display
+ *     The display to reset.
+ */
+void guac_terminal_display_reset_palette(guac_terminal_display* display);
+
+/**
+ * Replaces the color in the palette at the given index with the given color.
+ * If the index is invalid, the assignment is ignored.
+ *
+ * @param display
+ *     The display whose palette is being changed.
+ *
+ * @param index
+ *     The index of the palette entry to change.
+ *
+ * @param color
+ *     The color to assign to the palette entry having the given index.
+ *
+ * @returns
+ *     Zero if the assignment was successful, non-zero if the assignment
+ *     failed.
+ */
+int guac_terminal_display_assign_color(guac_terminal_display* display,
+        int index, const guac_terminal_color* color);
+
+/**
+ * Retrieves the color within the palette at the given index, if such a color
+ * exists. If the index is invalid, no color is retrieved.
+ *
+ * @param display
+ *     The display whose palette contains the color to be retrieved.
+ *
+ * @param index
+ *     The index of the palette entry to retrieve.
+ *
+ * @param color
+ *     A pointer to a guac_terminal_color structure which should receive the
+ *     color retrieved from the palette.
+ *
+ * @returns
+ *     Zero if the color was successfully retrieved, non-zero otherwise.
+ */
+int guac_terminal_display_lookup_color(guac_terminal_display* display,
+        int index, guac_terminal_color* color);
 
 /**
  * Copies the given range of columns to a new location, offset from

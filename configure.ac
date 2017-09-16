@@ -18,7 +18,7 @@
 #
 
 AC_PREREQ([2.61])
-AC_INIT([guacamole-server], [0.9.12-incubating])
+AC_INIT([guacamole-server], [0.9.13-incubating])
 AM_INIT_AUTOMAKE([-Wall -Werror foreign subdir-objects])
 AM_SILENT_RULES([yes])
 
@@ -63,6 +63,13 @@ AC_CHECK_LIB([pthread], [pthread_create], [PTHREAD_LIBS=-lpthread
               AC_DEFINE([HAVE_LIBPTHREAD],,
                         [Whether libpthread was found])])
 
+# Include libdl for dlopen() if necessary
+AC_CHECK_LIB([dl], [dlopen],
+             [DL_LIBS=-ldl],
+             [AC_CHECK_DECL([dlopen],,
+                            AC_MSG_ERROR("libdl is required on systems which do not otherwise provide dlopen()"),
+                            [#include <dlfcn.h>])])
+
 # OSSP UUID
 AC_CHECK_LIB([ossp-uuid], [uuid_make], [UUID_LIBS=-lossp-uuid],
              AC_CHECK_LIB([uuid], [uuid_make], [UUID_LIBS=-luuid],
@@ -82,10 +89,7 @@ AC_CHECK_DECL([uuid_make],,
 # cunit
 AC_CHECK_LIB([cunit], [CU_run_test], [CUNIT_LIBS=-lcunit])
 
-# WinSock
-AC_CHECK_LIB([wsock32], [main])
-
-AC_SUBST(LIBADD_DLOPEN)
+AC_SUBST(DL_LIBS)
 AC_SUBST(MATH_LIBS)
 AC_SUBST(PNG_LIBS)
 AC_SUBST(JPEG_LIBS)
@@ -107,6 +111,11 @@ AC_CHECK_DECL([cairo_format_stride_for_width],
                [Whether cairo_format_stride_for_width() is defined])],,
 	[#include <cairo/cairo.h>])
 
+AC_CHECK_DECL([poll],
+	[AC_DEFINE([HAVE_POLL],,
+               [Whether poll() is defined])],,
+	[#include <poll.h>])
+
 # Typedefs
 AC_TYPE_SIZE_T
 AC_TYPE_SSIZE_T
@@ -122,10 +131,6 @@ AC_SUBST([COMMON_INCLUDE], '-I$(top_srcdir)/src/common')
 # Common PulseAudio utility library
 AC_SUBST([PULSE_LTLIB],   '$(top_builddir)/src/pulse/libguac_pulse.la')
 AC_SUBST([PULSE_INCLUDE], '-I$(top_srcdir)/src/pulse')
-
-# Common utility library for guacd implementations
-AC_SUBST([LIBGUACD_LTLIB],   '$(top_builddir)/src/libguacd/libguacd.la')
-AC_SUBST([LIBGUACD_INCLUDE], '-I$(top_srcdir)/src/libguacd')
 
 # Common base SSH client
 AC_SUBST([COMMON_SSH_LTLIB],   '$(top_builddir)/src/common-ssh/libguac_common_ssh.la')
@@ -287,6 +292,30 @@ fi
 AM_CONDITIONAL([ENABLE_SSL], [test "x${have_ssl}" = "xyes"])
 AC_SUBST(SSL_LIBS)
 
+#
+# Winsock
+#
+
+have_winsock=disabled
+WINSOCK_LIBS=
+AC_ARG_WITH([winsock],
+            [AS_HELP_STRING([--with-winsock],
+                            [support Windows Sockets API @<:@default=check@:>@])],
+            [],
+            [with_winsock=check])
+
+if test "x$with_winsock" != "xno"
+then
+    have_winsock=yes
+    AC_CHECK_LIB([wsock32], [main],
+                 [WINSOCK_LIBS="-lwsock32"]
+                 [AC_DEFINE([ENABLE_WINSOCK],,
+                            [Whether Windows Socket API support is enabled])],
+                 [have_winsock=no])
+fi
+
+AM_CONDITIONAL([ENABLE_WINSOCK], [test "x${have_winsock}" = "xyes"])
+AC_SUBST(WINSOCK_LIBS)
 
 #
 # Ogg Vorbis
@@ -607,6 +636,24 @@ then
                                        [[#include <freerdp/freerdp.h>]])],,
                      [#include <winpr/wtypes.h>
                       #include <winpr/collections.h>])
+fi
+
+# Support for RDP gateways 
+if test "x${have_freerdp}" = "xyes"
+then
+    AC_CHECK_MEMBERS([rdpSettings.GatewayEnabled],
+                     [AC_DEFINE([HAVE_FREERDP_GATEWAY_SUPPORT],,
+                                [Whether FreeRDP supports RDP gateways])],,
+                     [[#include <freerdp/freerdp.h>]])
+fi
+
+# Support for load balancing via connection brokers 
+if test "x${have_freerdp}" = "xyes"
+then
+    AC_CHECK_MEMBERS([rdpSettings.LoadBalanceInfo],
+                     [AC_DEFINE([HAVE_FREERDP_LOAD_BALANCER_SUPPORT],,
+                                [Whether FreeRDP supports load balancers])],,
+                     [[#include <freerdp/freerdp.h>]])
 fi
 
 # Support for "PubSub" event system
@@ -1154,7 +1201,6 @@ AC_CONFIG_FILES([Makefile
                  src/common-ssh/Makefile
                  src/terminal/Makefile
                  src/libguac/Makefile
-                 src/libguacd/Makefile
                  src/guacd/Makefile
                  src/guacenc/Makefile
                  src/pulse/Makefile
@@ -1209,6 +1255,7 @@ $PACKAGE_NAME version $PACKAGE_VERSION
      libvorbis ........... ${have_vorbis}
      libpulse ............ ${have_pulse}
      libwebp ............. ${have_webp}
+     wsock32 ............. ${have_winsock}
 
    Protocol support:
 

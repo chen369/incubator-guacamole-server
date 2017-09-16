@@ -17,38 +17,32 @@
  * under the License.
  */
 
-
-#ifndef _GUAC_TERMINAL_COMMON_H
-#define _GUAC_TERMINAL_COMMON_H
+#ifndef GUAC_TERMINAL_XPARSECOLOR_H
+#define GUAC_TERMINAL_XPARSECOLOR_H
 
 #include "config.h"
-#include "types.h"
 
-#include <stdbool.h>
-
-/**
- * Returns the closest value to the value given that is also
- * within the given range.
- */
-int guac_terminal_fit_to_range(int value, int min, int max);
+#include "terminal/palette.h"
 
 /**
- * Encodes the given codepoint as UTF-8, storing the result within the
- * provided buffer, and returning the number of bytes stored.
+ * Parses an X11 color spec, as defined by Xlib's XParseColor(), storing the
+ * result in the provided guac_terminal_color structure. If the color spec is
+ * not valid, the provided guac_terminal_color is not touched.
+ *
+ * Currently, only the "rgb:*" format color specs are supported.
+ *
+ * @param spec
+ *     The X11 color spec to parse.
+ *
+ * @param color
+ *     A pointer to the guac_terminal_color structure which should receive the
+ *     parsed result.
+ *
+ * @returns
+ *     Zero if the color spec was successfully parsed, non-zero otherwise.
  */
-int guac_terminal_encode_utf8(int codepoint, char* utf8);
-
-/**
- * Returns whether a codepoint has a corresponding glyph, or is rendered
- * as a blank space.
- */
-bool guac_terminal_has_glyph(int codepoint);
-
-/**
- * Similar to write, but automatically retries the write operation until
- * an error occurs.
- */
-int guac_terminal_write_all(int fd, const char* buffer, int size);
+int guac_terminal_xparsecolor(const char* spec,
+        guac_terminal_color* color);
 
 #endif
 

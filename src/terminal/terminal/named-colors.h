@@ -17,26 +17,29 @@
  * under the License.
  */
 
-#ifndef LIBGUACD_LOG_H
-#define LIBGUACD_LOG_H
+#ifndef GUAC_TERMINAL_NAMED_COLORS_H
+#define GUAC_TERMINAL_NAMED_COLORS_H
 
 #include "config.h"
-
-#include <guacamole/client.h>
-
-/**
- * Prints an error message using the logging facilities of the given client,
- * automatically including any information present in guac_error. This function
- * accepts parameters identically to printf.
- */
-void guacd_client_log_guac_error(guac_client* client,
-        guac_client_log_level level, const char* message);
+#include "terminal/palette.h"
 
 /**
- * Logs a reasonable explanatory message regarding handshake failure based on
- * the current value of guac_error.
+ * Searches for the color having the given name, storing that color within the
+ * given guac_terminal_color structure if found. If the color cannot be found,
+ * the guac_terminal_color structure is not touched. All color names supported
+ * by xterm are recognized by this function.
+ *
+ * @param name
+ *     The name of the color to search for.
+ *
+ * @param color
+ *     A pointer to the guac_terminal_color structure in which the found color
+ *     should be stored.
+ *
+ * @returns
+ *     Zero if the color was successfully found, non-zero otherwise.
  */
-void guacd_client_log_handshake_failure(guac_client* client);
+int guac_terminal_find_color(const char* name, guac_terminal_color* color);
 
 #endif
 
